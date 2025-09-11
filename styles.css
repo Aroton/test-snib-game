@@ -1,0 +1,97 @@
+:root {
+    --bg-gradient-1: hsl(210, 80%, 55%);
+    --bg-gradient-2: hsl(240, 60%, 40%);
+    --platform-gradient-1: hsl(32, 60%, 55%);
+    --platform-gradient-2: hsl(32, 70%, 35%);
+    --player-glow: hsl(130, 90%, 70%);
+    --player-shadow: hsl(130, 100%, 30%);
+    --enemy-glow: hsl(0, 80%, 80%);
+    --enemy-shadow: hsl(0, 80%, 40%);
+    --ui-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    --border-radius: 18px;
+    --platform-radius: 12px;
+    --font-main: 'Segoe UI', 'Arial', sans-serif;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(ellipse at 60% 30%, var(--bg-gradient-1) 0%, var(--bg-gradient-2) 100%);
+    min-height: 100vh;
+    user-select: none;
+    font-family: var(--font-main);
+}
+
+#game-container {
+    margin: 0 auto;
+    width: 820px;
+    text-align: center;
+    position: relative;
+}
+
+#game-canvas {
+    display: block;
+    background: linear-gradient(180deg, var(--bg-gradient-1) 0%, var(--bg-gradient-2) 95%);
+    border-radius: var(--border-radius);
+    box-shadow: 0 8px 32px 2px rgba(40,60,100,0.45), 0 1.5px 4px 0 rgba(32,32,32,0.12);
+    outline: none;
+    margin: 24px auto 6px auto;
+    transition: box-shadow 0.2s;
+}
+
+#game-canvas:focus {
+    box-shadow: 0 8px 44px 6px rgba(40,120,200,0.25), 0 1.5px 4px 0 rgba(32,32,32,0.13);
+}
+
+#ui-overlay {
+    width: 800px;
+    margin: 0 auto;
+    text-align: center;
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.ui-message {
+    display: inline-block;
+    margin-top: 46px;
+    background: rgba(255,255,255,0.92);
+    color: #1b1b30;
+    font-family: var(--font-main);
+    font-size: 2.1rem;
+    border-radius: 18px;
+    box-shadow: var(--ui-shadow);
+    padding: 18px 44px 18px 44px;
+    opacity: 0.96;
+    letter-spacing: 0.01em;
+    font-weight: 600;
+    animation: fadein 0.8s cubic-bezier(.65,0,.25,1);
+}
+
+@keyframes fadein {
+    from { opacity: 0; transform: scale(0.92);}
+    to   { opacity: 0.96; transform: scale(1);}
+}
+
+/* HUD Styling */
+#hud {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%;
+    padding: 12px 0 0 18px;
+    font-size: 1.25rem;
+    color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    pointer-events: none;
+    font-family: var(--font-main);
+    user-select: none;
+    z-index: 20;
+    font-weight: 500;
+}
+
+@media (max-width: 900px) {
+    #game-container, #game-canvas, #ui-overlay { width: 100vw !important; max-width: 100vw; }
+    #game-canvas { height: 60vw !important; max-height: 60vw; }
+}
