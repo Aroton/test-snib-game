@@ -1,331 +1,402 @@
-window.addEventListener("DOMContentLoaded", function() {
-    window.game = new PlatformerGame();
-});
+window.addEventListener('DOMContentLoaded', () => { window.game = new FlappyGame(); });
 
-class PlatformerGame {
-    constructor() {
-        this.canvas = document.getElementById("game-canvas");
-        this.ctx = this.canvas.getContext("2d");
-        this.width = this.canvas.width;
-        this.height = this.canvas.height;
-        this.cameraX = 0;
+class FlappyGame {
+  constructor() {
+    this.canvas = document.getElementById('game-canvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.width = this.canvas.width;
+    this.height = this.canvas.height;
 
-        // Game state
-        this.inputState = { left: false, right: false, up: false, jump: false };
-        this.running = true;
-        this.showMessage = "";
-        this.messageTimer = 0;
+    // Config
+    this.cfg = {
+      gravity: 0.45,
+      flapStrength: 8.8,
+      pipeSpeed: 2.6,
+      pipeWidth: 80,
+      pipeGap: { min: 135, max: 170 },
+      spawnInterval: 1500, // ms
+      groundHeight: 72,
+      birdRadius: 18
+    };
 
-        // Level
-        const generatePlatforms = window.generatePlatforms;
-        this.platforms = generatePlatforms();
+    // State
+    this.state = 'ready'; // ready | playing | gameover
+    this.score = 0;
+    this.best = 0;
 
-        // Entities
-        const PlayerEntity = window.PlayerEntity;
-        const EnemyEntity = window.EnemyEntity;
-        this.player = new PlayerEntity(this.platforms);
+    // Entities
+    this.bird = { x: this.width * 0.28, y: this.height * 0.5, vy: 0, r: this.cfg.birdRadius, rot: 0 };
+    this.pipes = []; // { x, gapY, gapH, passed }
+    this.spawnTimer = 0;
 
-        // Enemies
-        this.enemies = [];
-        for (let i = 0; i < 3; ++i) {
-            this.enemies.push(new EnemyEntity(this.platforms, i));
+    // Timing
+    this.lastTs = performance.now();
+
+    // Input
+    this._bindInput();
+
+    // Focus for keyboard
+    setTimeout(() => this.canvas && this.canvas.focus(), 50);
+
+    // Loop
+    this.render = this.render.bind(this);
+    requestAnimationFrame(this.render);
+  }
+
+  // Input handling for keyboard/mouse/touch
+  _bindInput() {
+    const flapHandler = (e) => {
+      if (e && (e.code === 'Tab' || e.ctrlKey || e.metaKey)) return; // ignore combos
+      if (e && (e.code === 'Space' || e.code === 'ArrowUp')) e.preventDefault();
+      if (this.state === 'ready') {
+        this.startGame();
+        this.flap();
+      } else if (this.state === 'playing') {
+        this.flap();
+      } else if (this.state === 'gameover') {
+        this.reset();
+      }
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+        flapHandler(e);
+      } else if (e.code === 'KeyM') {
+        // Toggle mute/unmute
+        if (window.SFX) {
+          window.SFX.setMuted(window.SFX.enabled);
         }
+      }
+    });
 
-        // Bind input
-        this.setupInput();
+    this.canvas.addEventListener('mousedown', flapHandler);
+    this.canvas.addEventListener('touchstart', (e) => { e.preventDefault(); flapHandler(e); }, { passive: false });
+  }
 
-        // HUD
-        this.setupHUD();
+  startGame() {
+    if (this.state !== 'ready') return;
+    this.state = 'playing';
+    this.spawnTimer = 0;
+    this.pipes = [];
+  }
 
-        // Focus canvas for keyboard
-        setTimeout(() => { this.canvas.focus(); }, 100);
+  reset() {
+    this.state = 'ready';
+    this.score = 0;
+    this.bird.x = this.width * 0.28;
+    this.bird.y = this.height * 0.5;
+    this.bird.vy = 0;
+    this.bird.rot = 0;
+    this.pipes = [];
+    this.spawnTimer = 0;
+  }
 
-        // Start loop
-        this.lastTime = performance.now();
-        this.render();
+  gameOver() {
+    if (this.state !== 'playing') return;
+    this.state = 'gameover';
+    if (this.score > this.best) {
+      this.best = this.score;      
+    }
+    // Hit sound
+    if (window.SFX) window.SFX.playHit();
+  }
+
+  flap() {
+    // Give an upward impulse
+    this.bird.vy = -this.cfg.flapStrength;
+    // Flap sound
+    if (window.SFX) window.SFX.playFlap();
+  }
+
+  spawnPipe() {
+    const groundY = this.height - this.cfg.groundHeight;
+    const gapH = this._rand(this.cfg.pipeGap.min, this.cfg.pipeGap.max);
+    const margin = 30;
+    const minY = margin + gapH * 0.5;
+    const maxY = groundY - margin - gapH * 0.5;
+    const gapY = this._rand(minY, maxY);
+    this.pipes.push({ x: this.width + 10, gapY, gapH, passed: false });
+  }
+
+  update(dtMs) {
+    const dt = Math.min(dtMs, 40); // clamp delta for stability
+    const groundY = this.height - this.cfg.groundHeight;
+
+    if (this.state === 'playing') {
+      // Bird physics
+      this.bird.vy += this.cfg.gravity;
+      if (this.bird.vy > 12) this.bird.vy = 12;
+      this.bird.y += this.bird.vy;
+
+      // Bird rotation based on velocity
+      const t = Math.max(-10, Math.min(10, this.bird.vy));
+      this.bird.rot = this._lerp(this.bird.rot, this._map(t, -10, 10, -0.6, 1.2), 0.15);
+
+      // Pipes spawn/move
+      this.spawnTimer += dt;
+      if (this.spawnTimer >= this.cfg.spawnInterval) {
+        this.spawnTimer = 0;
+        this.spawnPipe();
+      }
+      for (let i = this.pipes.length - 1; i >= 0; --i) {
+        const p = this.pipes[i];
+        p.x -= this.cfg.pipeSpeed;
+        // Scoring when pipe passes bird
+        if (!p.passed && p.x + this.cfg.pipeWidth < this.bird.x) {
+          p.passed = true;
+          this.score++;
+          // Score sound
+          if (window.SFX) window.SFX.playScore();
+        }
+        // Despawn off-screen
+        if (p.x + this.cfg.pipeWidth < -20) this.pipes.splice(i, 1);
+      }
+
+      // Collision with ground/ceiling
+      if (this.bird.y + this.bird.r >= groundY || this.bird.y - this.bird.r <= 0) {
+        this.gameOver();
+      }
+
+      // Collision with pipes (AABB with gap test)
+      for (const p of this.pipes) {
+        if (this._circleRectCollide(this.bird.x, this.bird.y, this.bird.r, p.x, 0, this.cfg.pipeWidth, p.gapY - p.gapH * 0.5) ||
+            this._circleRectCollide(this.bird.x, this.bird.y, this.bird.r, p.x, p.gapY + p.gapH * 0.5, this.cfg.pipeWidth, groundY - (p.gapY + p.gapH * 0.5))) {
+          this.gameOver();
+          break;
+        }
+      }
+    } else if (this.state === 'ready') {
+      // Gentle bobbing animation on the spot
+      this.bird.y = this.height * 0.5 + Math.sin(performance.now() / 500) * 6;
+      this.bird.rot = Math.sin(performance.now() / 700) * 0.15 - 0.15;
+    } else if (this.state === 'gameover') {
+      // Let bird fall and tilt on game over for a short while
+      if (this.bird.y + this.bird.r < groundY) {
+        this.bird.vy += this.cfg.gravity;
+        this.bird.y += this.bird.vy;
+        this.bird.rot = Math.min(1.5, this.bird.rot + 0.06);
+      }
+    }
+  }
+
+  render() {
+    const now = performance.now();
+    const dt = now - this.lastTs;
+    this.lastTs = now;
+
+    // Update
+    this.update(dt);
+
+    // Draw
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.clearRect(0, 0, this.width, this.height);
+
+    this._drawBackground(ctx);
+    this._drawPipes(ctx);
+    this._drawGround(ctx);
+    this._drawBird(ctx);
+    this._drawHUD(ctx);
+
+    ctx.restore();
+
+    requestAnimationFrame(this.render);
+  }
+
+  // Drawing helpers
+  _drawBackground(ctx) {
+    // Sky gradient
+    const sky = ctx.createLinearGradient(0, 0, 0, this.height);
+    sky.addColorStop(0, 'hsl(200,90%,76%)');
+    sky.addColorStop(0.6, 'hsl(200,80%,62%)');
+    sky.addColorStop(1, 'hsl(200,70%,52%)');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    // Simple clouds
+    for (let i = 0; i < 6; i++) {
+      const t = (performance.now() / (9000 + i * 1200));
+      const cx = (i * 220 + 50 + 240 * Math.sin(t + i)) % (this.width + 300) - 150;
+      const cy = 60 + 30 * Math.cos(t * 0.7 + i * 0.6);
+      ctx.save();
+      ctx.globalAlpha = 0.22 + 0.15 * Math.sin(t + i * 0.8);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 70 + i * 8, 26 + i * 3, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = 'rgba(255,255,255,0.6)';
+      ctx.shadowBlur = 20;
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  _drawPipes(ctx) {
+    const groundY = this.height - this.cfg.groundHeight;
+    for (const p of this.pipes) {
+      const x = Math.floor(p.x) + 0.5; // crisp lines
+      const w = this.cfg.pipeWidth;
+      const topH = Math.max(0, p.gapY - p.gapH * 0.5);
+      const botY = Math.min(groundY, p.gapY + p.gapH * 0.5);
+      const botH = Math.max(0, groundY - botY);
+
+      const gradTop = ctx.createLinearGradient(x, 0, x + w, 0);
+      gradTop.addColorStop(0, 'hsl(120,45%,36%)');
+      gradTop.addColorStop(1, 'hsl(120,55%,42%)');
+      const gradBot = ctx.createLinearGradient(x, botY, x + w, botY);
+      gradBot.addColorStop(0, 'hsl(120,45%,36%)');
+      gradBot.addColorStop(1, 'hsl(120,55%,42%)');
+
+      // Top pipe
+      ctx.fillStyle = gradTop;
+      ctx.fillRect(x, 0, w, topH);
+      // Bottom pipe
+      ctx.fillStyle = gradBot;
+      ctx.fillRect(x, botY, w, botH);
+
+      // Edge highlights
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + 3, 0);
+      ctx.lineTo(x + 3, topH);
+      ctx.moveTo(x + 3, botY);
+      ctx.lineTo(x + 3, botY + botH);
+      ctx.stroke();
+    }
+  }
+
+  _drawGround(ctx) {
+    const y = this.height - this.cfg.groundHeight;
+    // Dirt gradient
+    const g = ctx.createLinearGradient(0, y, 0, this.height);
+    g.addColorStop(0, 'hsl(32,60%,60%)');
+    g.addColorStop(1, 'hsl(32,45%,40%)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, y, this.width, this.cfg.groundHeight);
+
+    // Grass top
+    ctx.fillStyle = 'hsl(120,45%,45%)';
+    ctx.fillRect(0, y - 6, this.width, 8);
+  }
+
+  _drawBird(ctx) {
+    ctx.save();
+    ctx.translate(this.bird.x, this.bird.y);
+    ctx.rotate(this.bird.rot);
+
+    // Body
+    const r = this.bird.r;
+    const bodyGrad = ctx.createRadialGradient(-r * 0.2, -r * 0.2, r * 0.2, 0, 0, r);
+    bodyGrad.addColorStop(0, 'hsl(45,100%,85%)');
+    bodyGrad.addColorStop(1, 'hsl(35,100%,55%)');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wing
+    ctx.save();
+    ctx.translate(-r * 0.1, 0);
+    ctx.rotate(Math.sin(performance.now() / 100) * 0.2);
+    ctx.fillStyle = 'hsl(35,100%,65%)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.7, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(r * 0.35, -r * 0.2, r * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(r * 0.42, -r * 0.18, r * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = 'hsl(40,100%,45%)';
+    ctx.beginPath();
+    ctx.moveTo(r * 0.9, 0);
+    ctx.lineTo(r * 0.55, r * 0.12);
+    ctx.lineTo(r * 0.55, -r * 0.12);
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle glow
+    ctx.globalAlpha = 0.25;
+    ctx.shadowColor = 'rgba(255,220,100,0.6)';
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  _drawHUD(ctx) {
+    ctx.save();
+    // Left: best score
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.font = 'bold 28px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`Best: ${this.best}`, 16, 12);
+
+    // Right: sound indicator and hint
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 20px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    const soundIcon = (window.SFX && window.SFX.enabled) ? '🔊' : '🔇';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillText(`${soundIcon} M`, this.width - 16, 14);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    if (this.state === 'playing') {
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 6;
+      ctx.font = 'bold 64px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.strokeText(String(this.score), this.width / 2, 70);
+      ctx.fillText(String(this.score), this.width / 2, 70);
+    } else if (this.state === 'ready') {
+      this._drawCenteredText(ctx, 'Flappy Clone', this.width / 2, this.height * 0.35, 46);
+      this._drawCenteredText(ctx, 'Press Space / Click / Tap to start', this.width / 2, this.height * 0.55, 22);
+    } else if (this.state === 'gameover') {
+      this._drawCenteredText(ctx, 'Game Over', this.width / 2, this.height * 0.35, 46);
+      this._drawCenteredText(ctx, `Score: ${this.score}  •  Best: ${this.best}`, this.width / 2, this.height * 0.5, 26);
+      this._drawCenteredText(ctx, 'Press Space / Click / Tap to restart', this.width / 2, this.height * 0.62, 20);
     }
 
-    setupInput() {
-        const input = this.inputState;
-        const canvas = this.canvas;
+    ctx.restore();
+  }
 
-        window.addEventListener("keydown", (e) => {
-            switch (e.code) {
-                case "ArrowLeft":
-                case "KeyA": input.left = true; break;
-                case "ArrowRight":
-                case "KeyD": input.right = true; break;
-                case "ArrowUp":
-                case "KeyW":
-                case "Space": input.up = input.jump = true; break;
-            }
-        });
-        window.addEventListener("keyup", (e) => {
-            switch (e.code) {
-                case "ArrowLeft":
-                case "KeyA": input.left = false; break;
-                case "ArrowRight":
-                case "KeyD": input.right = false; break;
-                case "ArrowUp":
-                case "KeyW":
-                case "Space": input.up = input.jump = false; break;
-            }
-        });
-        // Canvas focus for accessibility
-        canvas.addEventListener("mousedown", () => { canvas.focus(); });
-        canvas.addEventListener("touchstart", () => { canvas.focus(); });
-    }
+  _drawCenteredText(ctx, text, x, y, size) {
+    ctx.save();
+    ctx.font = `bold ${size}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(2, Math.floor(size / 10));
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = '#fff';
+    ctx.strokeText(text, x, y);
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
 
-    setupHUD() {
-        this.ui = document.getElementById("ui-overlay");
-        this.hud = document.createElement("div");
-        this.hud.id = "hud";
-        this.ui.appendChild(this.hud);
-    }
-
-    updateGameLogic() {
-        // Player
-        this.player.update(this.inputState);
-
-        // Respawn if dead
-        if (!this.player.alive) {
-            if (typeof this.player.respawnTimeout === "number") {
-                this.player.respawnTimeout--;
-                if (this.player.respawnTimeout <= 0) {
-                    this.player.respawn();
-                }
-            }
-        }
-
-        // Enemies
-        for (const enemy of this.enemies) {
-            enemy.update();
-        }
-
-        // Player-enemy collisions
-        if (this.player.alive && this.player.invuln === 0) {
-            for (const enemy of this.enemies) {
-                if (!enemy.alive) continue;
-                const dx = this.player.position.x - enemy.position.x;
-                const dy = this.player.position.y - enemy.position.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < this.player.radius + enemy.radius - 4) {
-                    // If player is falling, defeat enemy
-                    if (this.player.velocity.y > 1 && dy > 0) {
-                        if (enemy.hit()) {
-                            this.player.velocity.y = -window.PlatformerConstants.jumpVelocity * 0.7;
-                            this.player.score++;
-                            this.flashMessage("+1! Enemy defeated!", 1.1);
-                        }
-                    } else {
-                        this.player.die();
-                        this.flashMessage("Ouch! Respawn...", 1.5);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Win condition
-        if (this.player.score >= window.PlatformerConstants.winScore && !this.showMessage) {
-            this.running = false;
-            this.flashMessage("You win! 🎉", 3, true);
-        }
-    }
-
-    flashMessage(msg, dur, stopGame) {
-        this.showMessage = msg;
-        this.messageTimer = (dur || 1.2) * 60;
-        if (stopGame) {
-            this.running = false;
-            setTimeout(() => {
-                this.resetGame();
-            }, (dur || 2.2) * 1000);
-        }
-    }
-
-    resetGame() {
-        // Reset everything
-        this.platforms = window.generatePlatforms();
-        this.player = new window.PlayerEntity(this.platforms);
-        this.enemies = [];
-        for (let i = 0; i < 3; ++i) {
-            this.enemies.push(new window.EnemyEntity(this.platforms, i));
-        }
-        this.cameraX = 0;
-        this.running = true;
-        this.showMessage = "";
-        this.messageTimer = 0;
-    }
-
-    renderBackground(ctx) {
-        // Procedural sky gradient and clouds
-        ctx.save();
-        ctx.clearRect(0, 0, this.width, this.height);
-
-        // Distant "parallax" gradient sky
-        const grad = ctx.createLinearGradient(0, 0, 0, this.height);
-        grad.addColorStop(0, "hsl(210,80%,76%)");
-        grad.addColorStop(0.45, "hsl(210,80%,60%)");
-        grad.addColorStop(0.7, "hsl(210,70%,50%)");
-        grad.addColorStop(1, "hsl(210,60%,30%)");
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, this.width, this.height);
-
-        // Floating clouds
-        for (let i = 0; i < 7; ++i) {
-            const t = performance.now() / (11000 + i*3000);
-            const cx = (i*380 + 120 + 330 * Math.sin(t + i*0.8)) - this.cameraX*0.2;
-            const cy = 56 + 42 * Math.cos(t * 0.8 + i);
-            ctx.save();
-            ctx.globalAlpha = 0.25 + 0.16 * Math.sin(t + i*1.2);
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, 65 + 14*i, 24 + 6*i, 0, 0, Math.PI*2);
-            ctx.fillStyle = "hsl(210,90%,97%)";
-            ctx.shadowColor = "hsl(210,80%,90%)";
-            ctx.shadowBlur = 32;
-            ctx.fill();
-            ctx.restore();
-        }
-
-        // Parallax hills
-        for (let i = 0; i < 2; ++i) {
-            ctx.save();
-            ctx.globalAlpha = 0.34 + 0.13*i;
-            ctx.beginPath();
-            ctx.moveTo(0, this.height - 120 - 40*i);
-            for (let x = 0; x <= this.width; x += 24) {
-                const y = this.height - 120 - 40*i - 20*Math.sin((x + this.cameraX*0.19 + i*200) / (110 + 40*i));
-                ctx.lineTo(x, y);
-            }
-            ctx.lineTo(this.width, this.height);
-            ctx.lineTo(0, this.height);
-            ctx.closePath();
-            ctx.fillStyle = i === 0 ? "hsl(130,40%,62%)" : "hsl(110,30%,50%)";
-            ctx.fill();
-            ctx.restore();
-        }
-        ctx.restore();
-    }
-
-    renderPlatforms(ctx) {
-        // Platforms with gradients and rounded corners
-        for (const plat of this.platforms) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(plat.x - this.cameraX + window.PlatformerConstants.platformRadius, plat.y);
-            ctx.lineTo(plat.x - this.cameraX + plat.width - window.PlatformerConstants.platformRadius, plat.y);
-            ctx.quadraticCurveTo(
-                plat.x - this.cameraX + plat.width, plat.y,
-                plat.x - this.cameraX + plat.width, plat.y + window.PlatformerConstants.platformRadius
-            );
-            ctx.lineTo(plat.x - this.cameraX + plat.width, plat.y + plat.height - window.PlatformerConstants.platformRadius);
-            ctx.quadraticCurveTo(
-                plat.x - this.cameraX + plat.width, plat.y + plat.height,
-                plat.x - this.cameraX + plat.width - window.PlatformerConstants.platformRadius, plat.y + plat.height
-            );
-            ctx.lineTo(plat.x - this.cameraX + window.PlatformerConstants.platformRadius, plat.y + plat.height);
-            ctx.quadraticCurveTo(
-                plat.x - this.cameraX, plat.y + plat.height,
-                plat.x - this.cameraX, plat.y + plat.height - window.PlatformerConstants.platformRadius
-            );
-            ctx.lineTo(plat.x - this.cameraX, plat.y + window.PlatformerConstants.platformRadius);
-            ctx.quadraticCurveTo(
-                plat.x - this.cameraX, plat.y,
-                plat.x - this.cameraX + window.PlatformerConstants.platformRadius, plat.y
-            );
-            ctx.closePath();
-            // Gradient fill
-            const grad = ctx.createLinearGradient(plat.x - this.cameraX, plat.y, plat.x - this.cameraX, plat.y + plat.height);
-            grad.addColorStop(0, "hsl(32,60%,72%)");
-            grad.addColorStop(0.55, "hsl(32,60%,57%)");
-            grad.addColorStop(1, "hsl(32,45%,35%)");
-            ctx.fillStyle = grad;
-            ctx.shadowColor = "rgba(80,40,10,0.12)";
-            ctx.shadowBlur = 18;
-            ctx.fill();
-            // Top highlight
-            ctx.save();
-            ctx.globalAlpha = 0.18;
-            ctx.beginPath();
-            ctx.moveTo(plat.x - this.cameraX + 6, plat.y + 3);
-            ctx.lineTo(plat.x - this.cameraX + plat.width - 6, plat.y + 3);
-            ctx.lineWidth = 6;
-            ctx.strokeStyle = "#fff";
-            ctx.stroke();
-            ctx.restore();
-
-            ctx.restore();
-        }
-    }
-
-    renderEnemies(ctx) {
-        for (const enemy of this.enemies) {
-            enemy.render(ctx, this.cameraX);
-        }
-    }
-
-    renderHUD() {
-        this.hud.innerHTML =
-            `<span>Score: <b>${this.player.score}</b></span> &nbsp;` +
-            `<span>Enemies: <b>${this.enemies.filter(e=>e.alive).length}</b></span>`;
-    }
-
-    renderMessage() {
-        if (this.showMessage) {
-            if (!this.uiMessageEl) {
-                this.uiMessageEl = document.createElement("div");
-                this.uiMessageEl.className = "ui-message";
-                this.ui.appendChild(this.uiMessageEl);
-            }
-            this.uiMessageEl.innerText = this.showMessage;
-            this.uiMessageEl.style.display = "inline-block";
-        } else if (this.uiMessageEl) {
-            this.uiMessageEl.style.display = "none";
-        }
-    }
-
-    updateCamera() {
-        // Camera follows player, limited by world bounds
-        const Constants = window.PlatformerConstants;
-        let targetCam = this.player.position.x - this.width/2;
-        // Clamp
-        targetCam = Math.max(0, Math.min(Constants.worldWidth - this.width, targetCam));
-        // Smooth
-        this.cameraX += (targetCam - this.cameraX) * 0.13;
-    }
-
-    render = () => {
-        // Time step
-        const now = performance.now();
-        const dt = Math.min((now - this.lastTime) / 16.666, 2.5);
-        this.lastTime = now;
-
-        // Logic
-        if (this.running) this.updateGameLogic();
-
-        // Camera
-        this.updateCamera();
-
-        // Draw
-        this.renderBackground(this.ctx);
-        this.renderPlatforms(this.ctx);
-        this.player.render(this.ctx, this.cameraX);
-        this.renderEnemies(this.ctx);
-
-        this.renderHUD();
-        this.renderMessage();
-
-        if (this.messageTimer > 0) {
-            this.messageTimer--;
-            if (this.messageTimer <= 0) {
-                this.showMessage = "";
-            }
-        }
-
-        // Next frame
-        requestAnimationFrame(this.render);
-    }
+  // Geometry helpers
+  _circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
+    // clamp point on rect to circle center
+    const nx = Math.max(rx, Math.min(cx, rx + rw));
+    const ny = Math.max(ry, Math.min(cy, ry + rh));
+    const dx = cx - nx;
+    const dy = cy - ny;
+    return dx * dx + dy * dy <= cr * cr;
+  }
+  _rand(min, max) { return min + Math.random() * (max - min); }
+  _lerp(a, b, t) { return a + (b - a) * t; }
+  _map(v, a, b, c, d) { return c + (v - a) * (d - c) / (b - a); }
 }
 
-window.PlatformerGame = PlatformerGame;
+window.FlappyGame = FlappyGame;
