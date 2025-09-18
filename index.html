@@ -1,98 +1,17 @@
-<!DOCTYPE html>
+<![CDATA[<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Procedural Platformer</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <title>Flappy Bird Clone</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="game-container">
-        <canvas id="game-canvas" width="800" height="480" tabindex="0" aria-label="Platformer Game"></canvas>
-        <div id="ui-overlay"></div>
-    </div>
-    <script src="utils.js"></script>
-    <script src="entities/Player.js"></script>
-    <script src="entities/Enemy.js"></script>
-    <script src="game.js"></script>
-
-<script>
-  // Auto-generated initialization fix with dependency validation
-  function validateDependencies() {
-    console.log('🔍 Validating game dependencies...');
-    const requiredClasses = [];
-    requiredClasses.push('Player');
-    requiredClasses.push('Enemy');
-    requiredClasses.push('Game');
-    const missingClasses = [];
-    const availableClasses = [];
-    
-    requiredClasses.forEach(className => {
-      if (typeof window[className] !== 'undefined' && window[className] !== null) {
-        availableClasses.push(className);
-        console.log('✅ Class available:', className);
-      } else {
-        missingClasses.push(className);
-        console.error('❌ Missing class:', className);
-      }
-    });
-    
-    if (missingClasses.length > 0) {
-      console.error('🚨 Critical: Missing dependencies prevent game start:', missingClasses);
-      return false;
-    }
-    
-    console.log('✅ All dependencies validated successfully');
-    return true;
-  }
-
-  function initializeGame() {
-    console.log('🎮 Game initializing with enhanced validation...');
-    
-    // Step 1: Validate all dependencies are loaded
-    if (!validateDependencies()) {
-      console.error('🚨 Game initialization failed: Missing dependencies');
-      alert('Game failed to load: Missing required classes. Please refresh and try again.');
-      return;
-    }
-    
-    // Step 4: Start game with comprehensive method detection
-    setTimeout(() => {
-      console.log('🚀 Attempting to start game...');
-      let gameStarted = false;
-      
-      // Try comprehensive start method detection
-      if (!gameStarted) {
-        const startMethods = ['initGame', 'startGame', 'showMenu', 'init', 'start', 'showStartMenu', 'displayMenu'];
-        
-        for (const method of startMethods) {
-          try {
-            if (window.gameInstance && typeof window.gameInstance[method] === 'function') {
-              console.log('🚀 Starting game with instance method:', method);
-              window.gameInstance[method]();
-              gameStarted = true;
-              break;
-            } else if (typeof window[method] === 'function') {
-              console.log('🚀 Starting game with global function:', method);
-              window[method]();
-              gameStarted = true;
-              break;
-            }
-          } catch (error) {
-            console.warn('⚠️ Method', method, 'failed:', error.message);
-          }
-        }
-      }
-      
-      if (!gameStarted) {
-        console.error('🚨 No valid start method found. Game may not start properly.');
-        console.log('🔍 Available methods on gameInstance:', Object.getOwnPropertyNames(window.gameInstance || {}));
-        console.log('🔍 Available global functions:', Object.keys(window).filter(key => typeof window[key] === 'function'));
-      } else {
-        console.log('✅ Game started successfully!');
-      }
-    }, 150);
-  }
-
-</script>
+  <div id="game-container">
+    <canvas id="game-canvas" width="800" height="480" tabindex="0" aria-label="Flappy Bird Clone"></canvas>
+    <div id="ui-overlay"></div>
+  </div>
+  <script src="sounds.js"></script>
+  <script src="game.js"></script>
 </body>
-</html>
+</html>]]>
